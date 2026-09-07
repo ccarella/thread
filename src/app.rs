@@ -23,8 +23,15 @@ pub const AUTOSAVE_AFTER: Duration = Duration::from_secs(30);
 /// Last N body lines included by `p` (pull-quote).
 pub const PULL_QUOTE_LINES: usize = 20;
 
+/// Event-loop poll while a session countdown is running (BUILD_SPEC ~1s).
+pub const SESSION_POLL: Duration = Duration::from_secs(1);
+
+/// Event-loop poll when the timer is idle (autosave still needs a tick).
+pub const IDLE_POLL: Duration = Duration::from_millis(250);
+
 /// RAII guard: `ratatui::init` enables raw mode + alt screen and installs a
-/// panic hook; `Drop` always calls `ratatui::restore`.
+/// panic hook that restores the terminal; `Drop` always calls `ratatui::restore`
+/// (leave alt screen + disable raw mode) so panic/crash/`q` leave the shell usable.
 pub struct TerminalGuard {
     terminal: DefaultTerminal,
 }
@@ -107,6 +114,9 @@ pub struct App {
     cursor: usize,
     dirty: bool,
     dirty_since: Option<Instant>,
+    session_minutes: u64,
+    session_deadline: Option<Instant>,
+    session_flash: bool,
     pub should_quit: bool,
 }
 
@@ -133,6 +143,9 @@ impl App {
             cursor: 0,
             dirty: false,
             dirty_since: None,
+            session_minutes: config.session_minutes.max(1),
+            session_deadline: None,
+            session_flash: false,
             should_quit: false,
         };
         app.open_latest()?;
@@ -226,6 +239,27 @@ impl App {
         self.dirty
     }
 
+    /// `m:ss` countdown while a session is running (including `0:00` at expiry).
+    pub fn session_countdown(&self) -> Option<String> {
+        let deadline = self.session_deadline?;
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let secs = if remaining.is_zero() {
+            0
+        } else {
+            remaining.as_secs() + u64::from(remaining.subsec_nanos() > 0)
+        };
+        Some(format!("{}:{:02}", secs / 60, secs % 60))
+    }
+
+    /// True when the session has hit 0 and the status bar should flash.
+    pub fn session_flash(&self) -> bool {
+        self.session_flash
+    }
+
+    pub fn session_running(&self) -> bool {
+        self.session_deadline.is_some()
+    }
+
     pub fn title_state(&self) -> Option<&TitleState> {
         match &self.mode {
             Mode::Title(state) => Some(state),
@@ -243,13 +277,30 @@ impl App {
     }
 
     fn handle_events(&mut self) -> Result<()> {
-        if event::poll(Duration::from_millis(250))? {
-            if let Event::Key(key) = event::read()? {
-                if let Some(message) = keys::message_from_key(key, self.input_mode()) {
-                    self.update(message)?;
+        let timeout = if self.session_deadline.is_some() {
+            SESSION_POLL
+        } else {
+            IDLE_POLL
+        };
+        if event::poll(timeout)? {
+            loop {
+                match event::read()? {
+                    Event::Key(key) => {
+                        if let Some(message) = keys::message_from_key(key, self.input_mode()) {
+                            self.update(message)?;
+                        }
+                    }
+                    Event::Resize(_, _) => {
+                        // Next `draw` autoresizes; panes use percentage layout.
+                    }
+                    _ => {}
+                }
+                if !event::poll(Duration::ZERO)? {
+                    break;
                 }
             }
         }
+        self.tick_session();
         self.maybe_autosave()?;
         Ok(())
     }
@@ -289,6 +340,7 @@ impl App {
             Message::ToggleStatus => self.toggle_status()?,
             Message::PullQuote => self.pull_quote()?,
             Message::StartSearch => self.start_search()?,
+            Message::ToggleSession => self.toggle_session(),
             Message::Save => self.save_if_needed()?,
             Message::Escape => {}
             _ => {}
@@ -788,6 +840,35 @@ impl App {
         }
         Ok(())
     }
+
+    fn toggle_session(&mut self) {
+        if self.session_deadline.is_some() {
+            self.session_deadline = None;
+            self.session_flash = false;
+            return;
+        }
+        self.session_deadline =
+            Some(Instant::now() + Duration::from_secs(self.session_minutes.saturating_mul(60)));
+        self.session_flash = false;
+    }
+
+    fn tick_session(&mut self) {
+        let Some(deadline) = self.session_deadline else {
+            self.session_flash = false;
+            return;
+        };
+        if Instant::now() >= deadline {
+            self.session_flash = !self.session_flash;
+        } else {
+            self.session_flash = false;
+        }
+    }
+
+    #[cfg(test)]
+    pub fn expire_session_for_test(&mut self) {
+        self.session_deadline = Some(Instant::now() - Duration::from_secs(1));
+        self.tick_session();
+    }
 }
 
 #[cfg(test)]
@@ -1237,5 +1318,65 @@ mod tests {
         assert_eq!(titles, ["Kept"]);
         assert!(!titles.contains(&"Ownership"));
         assert!(!titles.contains(&"Old"));
+    }
+
+    #[test]
+    fn s_starts_and_stops_session_countdown() {
+        let (store, _dir) = seeded_store();
+        let mut cfg = Config::default();
+        cfg.session_minutes = 20;
+        let mut app = App::with_config(store, cfg).unwrap();
+        assert!(!app.session_running());
+        assert_eq!(app.session_countdown(), None);
+
+        app.update(Message::ToggleSession).unwrap();
+        assert!(app.session_running());
+        let label = app.session_countdown().unwrap();
+        assert!(
+            label == "20:00" || label == "19:59",
+            "expected ~20:00 just after start, got {label}"
+        );
+        assert!(!app.session_flash());
+
+        app.update(Message::ToggleSession).unwrap();
+        assert!(!app.session_running());
+        assert_eq!(app.session_countdown(), None);
+        assert!(!app.session_flash());
+    }
+
+    #[test]
+    fn session_zero_flashes_and_does_not_lock_editing() {
+        let (store, _dir) = seeded_store();
+        let mut app = App::new(store).unwrap();
+        app.update(Message::ToggleSession).unwrap();
+        app.expire_session_for_test();
+        assert_eq!(app.session_countdown().as_deref(), Some("0:00"));
+        assert!(app.session_flash());
+
+        app.tick_session();
+        assert!(!app.session_flash());
+        app.tick_session();
+        assert!(app.session_flash());
+
+        app.update(Message::EnterInsertAppend).unwrap();
+        assert_eq!(app.input_mode(), InputMode::Insert);
+        app.update(Message::InsertChar('!')).unwrap();
+        assert!(app.is_dirty());
+        assert!(app.opened().unwrap().body.ends_with('!'));
+        assert!(app.session_running());
+    }
+
+    #[test]
+    fn session_minutes_from_config() {
+        let (store, _dir) = seeded_store();
+        let mut cfg = Config::default();
+        cfg.session_minutes = 1;
+        let mut app = App::with_config(store, cfg).unwrap();
+        app.update(Message::ToggleSession).unwrap();
+        let label = app.session_countdown().unwrap();
+        assert!(
+            label == "1:00" || label == "0:59",
+            "expected ~1:00 from config, got {label}"
+        );
     }
 }

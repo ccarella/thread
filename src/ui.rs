@@ -9,9 +9,9 @@ use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 
 const NORMAL_HINTS: &str =
-    "j/k select  enter  i/a insert  n new  t thread  w keep  p quote  / search  ^s  q";
+    "j/k select  enter  i/a insert  n new  t thread  w keep  p quote  / search  s timer  ^s  q";
 const NOTES_HINTS: &str =
-    "j/k select  enter open  t topics  i/a insert  n new  w keep  p quote  / search  ^s  q";
+    "j/k select  enter open  t topics  i/a insert  n new  w keep  p quote  / search  s timer  ^s  q";
 const INSERT_HINTS: &str = "esc normal  ^s save";
 const SEARCH_HINTS_PREFIX: &str = "/";
 
@@ -26,7 +26,14 @@ pub fn render(frame: &mut Frame, app: &App) {
     let [left, right] =
         Layout::horizontal([Constraint::Percentage(28), Constraint::Percentage(72)]).areas(body);
 
-    frame.render_widget(Paragraph::new(top_bar(app)), top);
+    frame.render_widget(
+        Paragraph::new(top_bar(app)).style(if app.session_flash() {
+            Style::default().add_modifier(Modifier::REVERSED)
+        } else {
+            Style::default()
+        }),
+        top,
+    );
 
     let labels = app.left_labels();
     let has_items = !labels.is_empty();
@@ -136,6 +143,12 @@ fn top_bar(app: &App) -> String {
         parts.push(note.created.format("%Y-%m-%d").to_string());
         parts.push(note.status.to_string());
         parts.push(format!("{}w", note.word_count()));
+    }
+    if let Some(countdown) = app.session_countdown() {
+        parts.push(countdown);
+    }
+    if app.is_dirty() {
+        parts.push("*".into());
     }
     match app.input_mode() {
         InputMode::Insert => parts.push("insert".into()),
@@ -254,6 +267,7 @@ mod tests {
         assert!(rendered.contains("insert"));
         assert!(!rendered.contains("j/k select"));
         assert!(rendered.contains("4w"));
+        assert!(rendered.contains('*'));
     }
 
     #[test]
@@ -296,5 +310,72 @@ mod tests {
         assert!(rendered.contains("/plato"));
         assert!(rendered.contains("Forms"));
         assert!(rendered.contains("philosophy"));
+    }
+
+    #[test]
+    fn dirty_star_clears_after_save() {
+        let (mut app, _dir) = seeded_app();
+        assert!(!render_text(&app, 80, 12).contains('*'));
+        app.update(Message::EnterInsert).unwrap();
+        app.update(Message::InsertChar('x')).unwrap();
+        assert!(render_text(&app, 80, 12).contains('*'));
+        app.update(Message::Save).unwrap();
+        assert!(!app.is_dirty());
+        assert!(!render_text(&app, 80, 12).contains('*'));
+    }
+
+    #[test]
+    fn session_countdown_in_top_bar() {
+        let (mut app, _dir) = seeded_app();
+        app.update(Message::ToggleSession).unwrap();
+        let rendered = render_text(&app, 100, 12);
+        let label = app.session_countdown().unwrap();
+        assert!(
+            rendered.contains(&label),
+            "expected countdown {label} in top bar, got {rendered:?}"
+        );
+        assert!(rendered.contains("s timer"));
+    }
+
+    #[test]
+    fn layout_survives_narrow_and_wide_resize() {
+        let (mut app, _dir) = seeded_app();
+        for (w, h) in [(40, 8), (80, 12), (120, 24)] {
+            let rendered = render_text(&app, w, h);
+            assert!(
+                rendered.contains("thread"),
+                "{w}x{h}: missing thread, got {rendered:?}"
+            );
+            assert!(
+                rendered.contains("topics"),
+                "{w}x{h}: missing topics pane, got {rendered:?}"
+            );
+            assert!(
+                rendered.contains("Ownership"),
+                "{w}x{h}: missing note title, got {rendered:?}"
+            );
+        }
+
+        app.update(Message::EnterInsert).unwrap();
+        let small = render_text(&app, 40, 8);
+        assert!(small.contains("thread"));
+        assert!(small.contains("esc normal"));
+        assert!(small.contains("borrow checker"));
+    }
+
+    #[test]
+    fn session_zero_reverses_top_bar_without_hiding_editor() {
+        let (mut app, _dir) = seeded_app();
+        app.update(Message::ToggleSession).unwrap();
+        app.expire_session_for_test();
+        assert!(app.session_flash());
+        let rendered = render_text(&app, 80, 12);
+        assert!(rendered.contains("0:00"));
+        assert!(rendered.contains("borrow checker thoughts"));
+        app.update(Message::EnterInsertAppend).unwrap();
+        app.update(Message::InsertChar('!')).unwrap();
+        let rendered = render_text(&app, 80, 12);
+        assert!(rendered.contains('!'));
+        assert!(rendered.contains('*'));
     }
 }

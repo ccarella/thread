@@ -1,12 +1,16 @@
 //! Defaults for config and notes directories.
 //!
 //! `$THREAD_HOME` overrides both the notes directory and the config directory.
-//! If `config.toml` exists there (or in `~/.config/thread`), M4 reads
-//! `show_scratch_in_thread`. Other keys are ignored. The file is never created.
+//! If `config.toml` exists there (or in `~/.config/thread`), M4–M5 read
+//! `show_scratch_in_thread` and `session_minutes`. Other keys are ignored.
+//! The file is never created.
 
 use std::env;
 use std::fs;
 use std::path::PathBuf;
+
+/// BUILD_SPEC default session length when `session_minutes` is missing.
+pub const DEFAULT_SESSION_MINUTES: u64 = 20;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -15,6 +19,8 @@ pub struct Config {
     pub config_dir: PathBuf,
     /// When false, thread-detail (`t`) hides scratch notes. BUILD_SPEC default true.
     pub show_scratch_in_thread: bool,
+    /// Session countdown length for `s`. BUILD_SPEC default 20.
+    pub session_minutes: u64,
 }
 
 impl Default for Config {
@@ -23,6 +29,7 @@ impl Default for Config {
             notes_dir: PathBuf::from("thread"),
             config_dir: PathBuf::from("."),
             show_scratch_in_thread: true,
+            session_minutes: DEFAULT_SESSION_MINUTES,
         }
     }
 }
@@ -56,6 +63,7 @@ impl Config {
                 notes_dir: thread_home.clone(),
                 config_dir: thread_home,
                 show_scratch_in_thread: true,
+                session_minutes: DEFAULT_SESSION_MINUTES,
             };
         }
 
@@ -70,6 +78,7 @@ impl Config {
             notes_dir,
             config_dir,
             show_scratch_in_thread: true,
+            session_minutes: DEFAULT_SESSION_MINUTES,
         }
     }
 
@@ -78,28 +87,47 @@ impl Config {
         let Ok(text) = fs::read_to_string(&path) else {
             return;
         };
-        if let Some(value) = parse_show_scratch_in_thread(&text) {
+        if let Some(value) = parse_toml_bool(&text, "show_scratch_in_thread") {
             self.show_scratch_in_thread = value;
+        }
+        if let Some(value) = parse_toml_u64(&text, "session_minutes") {
+            if value > 0 {
+                self.session_minutes = value;
+            }
         }
     }
 }
 
 /// Tiny TOML-ish scan for one boolean. Missing key → `None` (caller keeps default).
-fn parse_show_scratch_in_thread(text: &str) -> Option<bool> {
+fn parse_toml_bool(text: &str, key: &str) -> Option<bool> {
+    match toml_value(text, key)?.as_str() {
+        "true" | "True" | "TRUE" | "1" => Some(true),
+        "false" | "False" | "FALSE" | "0" => Some(false),
+        _ => None,
+    }
+}
+
+/// Tiny TOML-ish scan for one integer. Missing / unparsable → `None`.
+fn parse_toml_u64(text: &str, key: &str) -> Option<u64> {
+    toml_value(text, key)?.parse().ok()
+}
+
+fn toml_value(text: &str, key: &str) -> Option<String> {
     for raw in text.lines() {
         let line = raw.trim();
         if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
             continue;
         }
-        let rest = line.strip_prefix("show_scratch_in_thread")?.trim();
-        let rest = rest.strip_prefix('=')?.trim();
+        let Some(rest) = line.strip_prefix(key) else {
+            continue;
+        };
+        let rest = rest.trim();
+        let Some(rest) = rest.strip_prefix('=') else {
+            continue;
+        };
         let rest = rest.trim_end_matches(',').trim();
         let rest = rest.trim_matches('"').trim_matches('\'').trim();
-        return match rest {
-            "true" | "True" | "TRUE" | "1" => Some(true),
-            "false" | "False" | "FALSE" | "0" => Some(false),
-            _ => None,
-        };
+        return Some(rest.to_string());
     }
     None
 }
@@ -119,6 +147,7 @@ mod tests {
         assert_eq!(cfg.notes_dir, Path::new("/home/ada/Documents/thread"));
         assert_eq!(cfg.config_dir, Path::new("/home/ada/.config/thread"));
         assert!(cfg.show_scratch_in_thread);
+        assert_eq!(cfg.session_minutes, DEFAULT_SESSION_MINUTES);
     }
 
     #[test]
@@ -127,6 +156,7 @@ mod tests {
         assert_eq!(cfg.notes_dir, Path::new("/tmp/thread-home"));
         assert_eq!(cfg.config_dir, Path::new("/tmp/thread-home"));
         assert!(cfg.show_scratch_in_thread);
+        assert_eq!(cfg.session_minutes, DEFAULT_SESSION_MINUTES);
     }
 
     #[test]
@@ -134,6 +164,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cfg = Config::load_from_dirs(Some(dir.path().to_path_buf()), None, None);
         assert!(cfg.show_scratch_in_thread);
+        assert_eq!(cfg.session_minutes, DEFAULT_SESSION_MINUTES);
     }
 
     #[test]
@@ -151,17 +182,65 @@ mod tests {
     #[test]
     fn parse_show_scratch_accepts_bare_and_quoted() {
         assert_eq!(
-            parse_show_scratch_in_thread("show_scratch_in_thread = true"),
+            parse_toml_bool("show_scratch_in_thread = true", "show_scratch_in_thread"),
             Some(true)
         );
         assert_eq!(
-            parse_show_scratch_in_thread("show_scratch_in_thread=false"),
+            parse_toml_bool("show_scratch_in_thread=false", "show_scratch_in_thread"),
             Some(false)
         );
         assert_eq!(
-            parse_show_scratch_in_thread("show_scratch_in_thread = \"false\""),
+            parse_toml_bool(
+                "show_scratch_in_thread = \"false\"",
+                "show_scratch_in_thread"
+            ),
             Some(false)
         );
-        assert_eq!(parse_show_scratch_in_thread("unrelated = 1\n"), None);
+        assert_eq!(
+            parse_toml_bool("unrelated = 1\n", "show_scratch_in_thread"),
+            None
+        );
+    }
+
+    #[test]
+    fn config_file_sets_session_minutes() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("config.toml"),
+            "show_scratch_in_thread = true\nsession_minutes = 5\n",
+        )
+        .unwrap();
+        let cfg = Config::load_from_dirs(Some(dir.path().to_path_buf()), None, None);
+        assert_eq!(cfg.session_minutes, 5);
+        assert!(cfg.show_scratch_in_thread);
+    }
+
+    #[test]
+    fn zero_or_invalid_session_minutes_keeps_default() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("config.toml"), "session_minutes = 0\n").unwrap();
+        let cfg = Config::load_from_dirs(Some(dir.path().to_path_buf()), None, None);
+        assert_eq!(cfg.session_minutes, DEFAULT_SESSION_MINUTES);
+
+        fs::write(dir.path().join("config.toml"), "session_minutes = nope\n").unwrap();
+        let cfg = Config::load_from_dirs(Some(dir.path().to_path_buf()), None, None);
+        assert_eq!(cfg.session_minutes, DEFAULT_SESSION_MINUTES);
+    }
+
+    #[test]
+    fn parse_session_minutes_accepts_bare_and_quoted() {
+        assert_eq!(
+            parse_toml_u64("session_minutes = 20", "session_minutes"),
+            Some(20)
+        );
+        assert_eq!(
+            parse_toml_u64("session_minutes=1", "session_minutes"),
+            Some(1)
+        );
+        assert_eq!(
+            parse_toml_u64("session_minutes = \"15\"", "session_minutes"),
+            Some(15)
+        );
+        assert_eq!(parse_toml_u64("unrelated = 1\n", "session_minutes"), None);
     }
 }
