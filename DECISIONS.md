@@ -1,6 +1,6 @@
 # Decisions
 
-Library and behavior choices for M0–M1 that are not spelled out in the product sketch.
+Library and behavior choices that are not spelled out in the product sketch.
 
 ## Ratatui 0.30 (not 0.29)
 
@@ -38,6 +38,17 @@ Modules match the sketch (`app`, `ui`, `keys`, `note`, `store`, `config`, `error
 - `list_notes` / `search` skip `.md` files that have a fence but fail YAML parse; `load` returns that error.
 - Writes go through a sibling `*.md.tmp` then `rename`.
 
-## TUI
+## TUI (M0)
 
-`q` / `Q` quit. The M0 screen is the word **thread** plus a border; it does not list notes or bind store keys.
+`q` / `Q` quit. The M0 screen was the word **thread** plus a border; it did not list notes or bind store keys.
+
+## M2 two-pane Normal mode
+
+Elm-style split: `App` is the model, `keys::Message` is the message (renamed from M0 `Command` now that there is real interaction), `App::update` applies it, `ui::render` is the view.
+
+- `list_topics()` is now recency-ordered (latest note `updated` desc, then name). Empty topic directories (no readable notes) sort last. M1 listed names A–Z; the M2 AC wants most recently updated first.
+- Left/right split is `Constraint::Percentage(28)` / `Percentage(72)`.
+- `j` / `k` move the topic highlight and clamp at the ends (no wrap, no arrow keys). The right pane always follows the selection: empty, or that topic’s `latest` note, read-only. `Enter` reloads `latest` from disk for the current topic.
+- Top bar is `thread` plus the selected topic. When a note is open, it also shows the note’s `created` UTC date, status, and whitespace word count (cheap extras; not required to PASS).
+- Bottom bar is Normal-mode hints only. Insert/Title modes and `n` / `t` / `w` / `p` / `/` / `s` stay unbound.
+- `q` calls `save_if_needed` then quits with no confirm modal. M2 has no editor, so that save is a no-op.

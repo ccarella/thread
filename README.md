@@ -18,9 +18,21 @@ rustc --version   # 1.88.0
 cargo run
 ```
 
-The app enters the alternate screen, shows **thread**, and restores the terminal on `q` (also on panic / drop).
+The app enters the alternate screen and restores the terminal on `q` (also on panic / drop).
 
 First run creates the notes directory if it is missing (`~/Documents/thread`). `$THREAD_HOME` overrides that path (and the future config directory). `config.toml` is not read yet.
+
+## Keys (M2, Normal mode)
+
+| Key | Action |
+| --- | --- |
+| `j` / `k` | Move topic selection (clamped; most recently updated first) |
+| `Enter` | Open the selected topic’s **latest** note on the right (read-only) |
+| `q` | Save if needed and quit (read-only in M2, so nothing to save; no confirm) |
+
+Left pane (~28%) lists unique topics. Right pane (~72%) shows that topic’s latest note, or is empty if there isn’t one. The top bar shows `thread` plus the current topic (and date / status / word count when a note is open). The bottom bar shows Normal-mode hints.
+
+Insert / Title modes and `n` / `t` / `w` / `p` / `/` / `s` are not bound yet.
 
 ## Note path layout
 
@@ -55,4 +67,5 @@ cargo test
 
 - **M0** — crate boots (alt screen, `q` quits, terminal restored)
 - **M1** — filesystem store (`list_topics`, `list_notes`, `load`, `save`, `search`, `latest`)
-- Later — two-pane UI, editor, threads / pull-quotes, timer
+- **M2** — two-pane Normal mode (topics + latest note, read-only)
+- Later — editor, threads / pull-quotes, timer
