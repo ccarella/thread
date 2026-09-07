@@ -1,0 +1,22 @@
+[package]
+name = "thread"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT"
+description = "Thinking Log TUI — dated notes on topics over time"
+authors = ["Chris Carella <ccarella@gmail.com>"]
+repository = "https://github.com/ccarella/thread"
+readme = "README.md"
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+crossterm = "0.29"
+dirs = "6"
+ratatui = "0.30"
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"
