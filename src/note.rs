@@ -128,6 +128,10 @@ impl Note {
         Ok(format!("---\n{yaml}---\n{}", self.body))
     }
 
+    pub fn word_count(&self) -> usize {
+        self.body.split_whitespace().count()
+    }
+
     pub fn matches_query(&self, query: &str) -> bool {
         let q = query.to_lowercase();
         if q.is_empty() {
@@ -300,5 +304,6 @@ body";
         assert_eq!(slugify(""), "note");
         assert_eq!(Status::Scratch.to_string(), "scratch");
         assert_eq!(Status::Keep.as_str(), "keep");
+        assert_eq!(sample().word_count(), 3);
     }
 }

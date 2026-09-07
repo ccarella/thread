@@ -1,4 +1,4 @@
-//! Thinking Log TUI library: note store plus a thin Ratatui app.
+//! Thinking Log TUI library: note store plus a two-pane Ratatui app.
 
 pub mod app;
 pub mod config;
@@ -12,9 +12,9 @@ use config::Config;
 use error::Result;
 use store::Store;
 
-/// Create the notes directory if needed and run the M0 TUI.
+/// Create the notes directory if needed and run the TUI.
 pub fn run() -> Result<()> {
     let config = Config::load();
-    Store::open(config.notes_dir)?;
-    app::App::new().run()
+    let store = Store::open(config.notes_dir)?;
+    app::App::new(store)?.run()
 }
