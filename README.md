@@ -20,28 +20,35 @@ cargo run
 
 The app enters the alternate screen and restores the terminal on `q` (also on panic / drop).
 
-First run creates the notes directory if it is missing (`~/Documents/thread`). `$THREAD_HOME` overrides that path (and the future config directory). `config.toml` is not read yet.
+First run creates the notes directory if it is missing (`~/Documents/thread`). `$THREAD_HOME` overrides that path (and the config directory). If `config.toml` exists, `show_scratch_in_thread` is read (default **true**).
 
-## Keys (M3)
+## Keys (M4)
 
 | Key | Mode | Action |
 | --- | --- | --- |
-| `j` / `k` | Normal | Move topic selection (clamped; most recently updated first) |
-| `Enter` | Normal | Reload the selected topic’s **latest** note |
+| `j` / `k` | Normal | Move selection (topics, or notes in thread view). Clamped, no wrap. |
+| `Enter` | Normal | Topics: open that topic’s **latest** note. Thread: open the highlighted note. |
+| `t` | Normal | Toggle left pane: all topics ↔ notes in the current topic (oldest at top, newest at bottom) |
+| `w` | Normal | Toggle current note `scratch` ↔ `keep` and save immediately |
+| `p` | Normal | Append a quoted excerpt (last ~20 lines) from the topic’s last **keep**, or latest if none; enter Insert |
+| `/` | Normal | Search mode: incremental case-insensitive substring on titles and bodies |
+| `Enter` | Search | Open the selected hit |
+| `Esc` | Search / Insert / Title | Return to Normal (Insert also saves if dirty; Title cancels; Search cancels) |
 | `i` | Normal | Insert into the open note at the current cursor |
 | `a` | Normal | Insert at the end of the open note’s body |
 | `n` | Normal | New note: `topic:` (prefill current) then `title:` |
-| `Ctrl+s` | Normal / Insert | Save without quitting |
-| `Esc` | Insert / Title | Return to Normal (Insert also saves if dirty; Title cancels) |
+| `Ctrl+s` | Normal / Insert / Search | Save without quitting |
 | `q` | Normal | Save if needed and quit (no confirm) |
 
 Insert editing: type, Backspace, Enter (newline), arrows, Home/End. UTF-8 is char-safe (no byte-offset panics).
 
-Left pane (~28%) lists unique topics. Right pane (~72%) is the **current note** (editable in Insert). The top bar shows `thread` plus the current topic, and when a note is open its date, status, and whitespace word count (updates as you type). The bottom bar hints follow the mode (`Normal` / `Insert` / `Title`).
+In Search, type to filter (including `j`/`k`); Up/Down pick among hits. Empty query lists all notes.
+
+Left pane (~28%) is **topics** or **notes** (or search hits). Right pane (~72%) is the **current note** (editable in Insert). The top bar shows `thread` plus the current topic, and when a note is open its date, **status**, and whitespace word count. The bottom bar hints follow the mode.
 
 Dirty notes autosave about every 30 seconds and when leaving Insert.
 
-Not bound yet: `t` thread-detail, `w` scratch/keep, `p` pull-quote, `/` search, `s` timer.
+Not bound yet: `s` session timer.
 
 ## Note path layout
 
@@ -85,4 +92,5 @@ cargo test
 - **M1** — filesystem store (`list_topics`, `list_notes`, `load`, `save`, `search`, `latest`)
 - **M2** — two-pane Normal mode (topics + latest note)
 - **M3** — Insert / Title editor, save / autosave, new note, word count
-- Later — threads / pull-quotes, timer
+- **M4** — thread notes pane, scratch/keep, pull-quote, search
+- Later — session timer
