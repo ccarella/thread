@@ -34,10 +34,10 @@ Modules match the sketch (`app`, `ui`, `keys`, `note`, `store`, `config`, `error
 - `save` on a note with no `path` allocates `{topic}/{yyyy-mm-dd}-{slug}.md` and appends `-2`, `-3`, … on collision. Once `path` is set, later saves keep that file (title edits do not rename).
 - `parent` is an opaque optional string (relative path recommended); no graph walk in M1.
 - Topic names cannot be empty, `.` / `..`, hidden (`.*`), or contain path separators.
-- Files with no YAML fence are still notes: whole file is `body`, `topic` is the parent directory name, `title` is the filename with `.md` stripped, `status` defaults to `scratch`, timestamps come from mtime when the file exists.
+- Files with no YAML fence are still notes: whole file is `body`, `topic` is the parent directory name, `title` is the filename (as on disk), `status` defaults to `scratch`, timestamps come from mtime when the file exists.
 - `list_notes` / `search` skip `.md` files that have a fence but fail YAML parse; `load` returns that error.
 - Writes go through a sibling `*.md.tmp` then `rename`.
 
-## TUI extras
+## TUI
 
-`q` / `Q` quit as specified. `Ctrl-C` also quits so raw mode is not a trap. The M0 UI does not list notes yet.
+`q` / `Q` quit. The M0 screen is the word **thread** plus a border; it does not list notes or bind store keys.

@@ -1,6 +1,6 @@
 //! Keyboard mapping. M0 only needs quit.
 
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
@@ -11,10 +11,8 @@ pub fn command_from_key(key: KeyEvent) -> Option<Command> {
     if key.kind != KeyEventKind::Press {
         return None;
     }
-
     match key.code {
         KeyCode::Char('q' | 'Q') => Some(Command::Quit),
-        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Some(Command::Quit),
         _ => None,
     }
 }
@@ -23,6 +21,7 @@ pub fn command_from_key(key: KeyEvent) -> Option<Command> {
 mod tests {
     use super::*;
     use crossterm::event::KeyEventState;
+    use crossterm::event::KeyModifiers;
 
     fn press(code: KeyCode) -> KeyEvent {
         KeyEvent {

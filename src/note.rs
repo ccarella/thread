@@ -100,8 +100,8 @@ impl Note {
             .as_ref()
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
-            .map(filename_title)
-            .unwrap_or_default();
+            .unwrap_or("")
+            .to_string();
         let (created, updated) = timestamps_for(path.as_deref());
         Self {
             path,
@@ -158,13 +158,6 @@ pub fn slugify(title: &str) -> String {
     } else {
         slug
     }
-}
-
-fn filename_title(name: &str) -> String {
-    name.strip_suffix(".md")
-        .or_else(|| name.strip_suffix(".MD"))
-        .unwrap_or(name)
-        .to_string()
 }
 
 fn timestamps_for(path: Option<&Path>) -> (DateTime<Utc>, DateTime<Utc>) {
@@ -292,7 +285,7 @@ body";
         let path = PathBuf::from("/notes/rust/2026-09-07-plain.md");
         let note = Note::from_markdown(Some(path.clone()), "# just markdown\n").unwrap();
         assert_eq!(note.topic, "rust");
-        assert_eq!(note.title, "2026-09-07-plain");
+        assert_eq!(note.title, "2026-09-07-plain.md");
         assert_eq!(note.status, Status::Scratch);
         assert_eq!(note.parent, None);
         assert_eq!(note.body, "# just markdown\n");

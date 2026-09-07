@@ -2,7 +2,6 @@
 
 use crate::error::Result;
 use crate::keys::{self, Command};
-use crate::store::Store;
 use crate::ui;
 use crossterm::event::{self, Event};
 use ratatui::{DefaultTerminal, Frame};
@@ -36,17 +35,14 @@ impl Drop for TerminalGuard {
     }
 }
 
+#[derive(Debug, Default)]
 pub struct App {
     pub should_quit: bool,
-    pub store: Store,
 }
 
 impl App {
-    pub fn new(store: Store) -> Self {
-        Self {
-            should_quit: false,
-            store,
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn run(mut self) -> Result<()> {

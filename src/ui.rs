@@ -15,14 +15,12 @@ pub fn render(frame: &mut Frame, _app: &App) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::Store;
+    use crate::app::App;
     use ratatui::{backend::TestBackend, Terminal};
 
     #[test]
     fn draws_thread_title() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path()).unwrap();
-        let app = App::new(store);
+        let app = App::new();
         let backend = TestBackend::new(24, 8);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal.draw(|frame| render(frame, &app)).unwrap();
