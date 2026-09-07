@@ -14,12 +14,14 @@ Front matter is parsed with `serde_yaml` 0.9. The crate is unmaintained; timesta
 
 A later swap to `serde_yml` / `serde_norway` should be mechanical.
 
-## Config file is not loaded yet
+## Config file (M4)
 
-`Config::load()` returns defaults only. No `config.toml` is created or parsed.
+`Config::load()` still uses directory defaults from M0:
 
-- If `$THREAD_HOME` is set, it is both `notes_dir` and the future config directory.
+- If `$THREAD_HOME` is set, it is both `notes_dir` and the config directory.
 - Otherwise notes dir is `~/Documents/thread` and config dir is `~/.config/thread`.
+
+If `config.toml` already exists in the config directory, only `show_scratch_in_thread` is honored (BUILD_SPEC default **true** when the file or key is missing). The file is never created. Other keys, including `notes_dir`, are ignored. Parsing is a tiny line scan, not a TOML crate.
 
 Store tests pass an explicit temp directory and never touch the real notes dir.
 
@@ -62,4 +64,13 @@ No extra crate. Body editing is a small char-index buffer in `editor.rs` (Unicod
 - **Save:** `Ctrl+s` writes if dirty and stays in the current mode. `q` in Normal saves then quits. Leaving Insert (`Esc`) saves if dirty. A dirty buffer also autosaves every 30s from the first unsaved edit (not a keystroke debounce). `updated` is bumped in `App` on save, not in `Store::save` (so M1 fixtures keep their timestamps).
 - **New note `n`:** Title mode, two steps on the bottom bar: `topic:` (prefilled with the selected topic) then `title:`. Empty or invalid topic stays on the prompt. Created notes are `scratch` with body `What am I trying to decide?\n\n` and land in Insert with the cursor after that starter. Path allocation is still `Store::save`.
 - **Right pane:** the current note is the edit buffer. Insert draws an unwrapped body plus a terminal cursor; Normal still wraps for reading.
-- Still unbound: `t` / `w` / `p` / `/` / `s` (M4/M5).
+- M3 left `t` / `w` / `p` / `/` / `s` unbound.
+
+## M4 thread, status, pull-quote, search
+
+- **`t`:** left pane toggles `topics` ↔ `notes` for the current topic. Notes are chronological by `created` (oldest at top, newest at bottom). `j`/`k` only move the highlight in notes mode; `Enter` opens that note. In topics mode `j`/`k` still follow the M2 preview (latest) and `Enter` still reloads latest. Hidden scratch notes (`show_scratch_in_thread = false`) are omitted from this list only, not from search or `latest`.
+- **`w`:** toggles `scratch`/`keep` on the open note, writes immediately (including any dirty body), bumps `updated`, refreshes the top-bar status. No-op if nothing is open.
+- **`p`:** source is the most recently *updated* `keep` in the current note’s topic, else `latest`. Last 20 body lines, prefixed with `>` plus a `> YYYY-MM-DD` date header (`created` of the source). Appended to the open note; leaves Insert and dirty. If the only note is the current one, that note is quoted into itself. No-op with no open note.
+- **`/`:** Search mode. Incremental case-insensitive substring via the existing `Store::search` API (titles, bodies, and topic names). `Enter` opens the selected hit (default: most recently updated); `Esc` returns to Normal without changing the open note. Printable characters including `j`/`k` go into the query; **Up/Down** move among hits (so `/` remains a true substring filter). Opening a hit restores the topics pane on that note’s topic.
+- **`s`** stays unbound (session timer is M5).
+- `Message` names `SelectDown` / `SelectUp` / `OpenSelected` replace M2’s `TopicDown` / `TopicUp` / `OpenLatest` now that the left pane is not always topics.

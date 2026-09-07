@@ -16,6 +16,6 @@ use store::Store;
 /// Create the notes directory if needed and run the TUI.
 pub fn run() -> Result<()> {
     let config = Config::load();
-    let store = Store::open(config.notes_dir)?;
-    app::App::new(store)?.run()
+    let store = Store::open(config.notes_dir.clone())?;
+    app::App::with_config(store, config)?.run()
 }

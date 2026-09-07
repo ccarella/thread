@@ -1,6 +1,6 @@
-//! Two-pane view: topics on the left, editable current note on the right.
+//! Two-pane view: topics or thread notes on the left, current note on the right.
 
-use crate::app::{App, TitleStep};
+use crate::app::{App, LeftPane, TitleStep};
 use crate::editor;
 use crate::keys::InputMode;
 use ratatui::layout::{Constraint, Layout, Position};
@@ -8,8 +8,12 @@ use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 
-const NORMAL_HINTS: &str = "j/k select  enter open latest  i/a insert  n new  ^s save  q quit";
+const NORMAL_HINTS: &str =
+    "j/k select  enter  i/a insert  n new  t thread  w keep  p quote  / search  ^s  q";
+const NOTES_HINTS: &str =
+    "j/k select  enter open  t topics  i/a insert  n new  w keep  p quote  / search  ^s  q";
 const INSERT_HINTS: &str = "esc normal  ^s save";
+const SEARCH_HINTS_PREFIX: &str = "/";
 
 pub fn render(frame: &mut Frame, app: &App) {
     let [top, body, bottom] = Layout::vertical([
@@ -24,18 +28,16 @@ pub fn render(frame: &mut Frame, app: &App) {
 
     frame.render_widget(Paragraph::new(top_bar(app)), top);
 
-    let items: Vec<ListItem> = app
-        .topics()
-        .iter()
-        .map(|topic| ListItem::new(topic.as_str()))
-        .collect();
+    let labels = app.left_labels();
+    let has_items = !labels.is_empty();
+    let items: Vec<ListItem> = labels.into_iter().map(ListItem::new).collect();
     let list = List::new(items)
-        .block(Block::bordered().title("topics"))
+        .block(Block::bordered().title(app.left_title()))
         .highlight_symbol("> ")
         .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
     let mut state = ListState::default();
-    if !app.topics().is_empty() {
-        state.select(Some(app.selected()));
+    if has_items {
+        state.select(Some(app.left_selected()));
     }
     frame.render_stateful_widget(list, left, &mut state);
 
@@ -81,10 +83,24 @@ fn render_note(frame: &mut Frame, app: &App, area: ratatui::layout::Rect) {
 fn render_bottom(frame: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     match app.input_mode() {
         InputMode::Normal => {
-            frame.render_widget(Paragraph::new(NORMAL_HINTS), area);
+            let hints = match app.left_pane() {
+                LeftPane::Topics => NORMAL_HINTS,
+                LeftPane::Notes => NOTES_HINTS,
+            };
+            frame.render_widget(Paragraph::new(hints), area);
         }
         InputMode::Insert => {
             frame.render_widget(Paragraph::new(INSERT_HINTS), area);
+        }
+        InputMode::Search => {
+            let query = app.search_query();
+            let line = format!("{SEARCH_HINTS_PREFIX}{query}");
+            frame.render_widget(Paragraph::new(line), area);
+            if area.width > 0 && area.height > 0 {
+                let x = area.x
+                    + (1 + query.chars().count()).min(area.width.saturating_sub(1) as usize) as u16;
+                frame.set_cursor_position(Position::new(x, area.y));
+            }
         }
         InputMode::Title => {
             let Some(state) = app.title_state() else {
@@ -124,6 +140,7 @@ fn top_bar(app: &App) -> String {
     match app.input_mode() {
         InputMode::Insert => parts.push("insert".into()),
         InputMode::Title => parts.push("title".into()),
+        InputMode::Search => parts.push("search".into()),
         InputMode::Normal => {}
     }
     parts.join("  ")
@@ -132,9 +149,9 @@ fn top_bar(app: &App) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::App;
+    use crate::app::{App, LeftPane};
     use crate::keys::Message;
-    use crate::note::Note;
+    use crate::note::{Note, Status};
     use crate::store::Store;
     use chrono::{TimeZone, Utc};
     use ratatui::{backend::TestBackend, Terminal};
@@ -182,7 +199,7 @@ mod tests {
     #[test]
     fn two_panes_show_topics_latest_note_and_normal_hints() {
         let (app, _dir) = seeded_app();
-        let rendered = render_text(&app, 80, 12);
+        let rendered = render_text(&app, 100, 12);
         assert!(rendered.contains("thread"));
         assert!(rendered.contains("topics"));
         assert!(rendered.contains("rust"));
@@ -190,8 +207,10 @@ mod tests {
         assert!(rendered.contains("Ownership"));
         assert!(rendered.contains("borrow checker thoughts"));
         assert!(rendered.contains("j/k select"));
-        assert!(rendered.contains("enter open latest"));
-        assert!(rendered.contains("q quit"));
+        assert!(rendered.contains("t thread"));
+        assert!(rendered.contains("w keep"));
+        assert!(rendered.contains("p quote"));
+        assert!(rendered.contains("/ search"));
         assert!(rendered.contains("i/a insert"));
         assert!(rendered.contains("n new"));
         assert!(rendered.contains("scratch"));
@@ -202,7 +221,7 @@ mod tests {
     #[test]
     fn selecting_another_topic_shows_its_latest_note() {
         let (mut app, _dir) = seeded_app();
-        app.update(Message::TopicDown).unwrap();
+        app.update(Message::SelectDown).unwrap();
         let rendered = render_text(&app, 80, 12);
         assert!(rendered.contains("Forms"));
         assert!(rendered.contains("plato"));
@@ -213,7 +232,7 @@ mod tests {
     fn empty_store_shows_empty_note_pane_and_hints() {
         let dir = tempfile::tempdir().unwrap();
         let app = App::new(Store::open(dir.path()).unwrap()).unwrap();
-        let rendered = render_text(&app, 80, 12);
+        let rendered = render_text(&app, 100, 12);
         assert!(rendered.contains("thread"));
         assert!(rendered.contains("topics"));
         assert!(rendered.contains("note"));
@@ -244,5 +263,38 @@ mod tests {
         let rendered = render_text(&app, 80, 12);
         assert!(rendered.contains("topic: rust"));
         assert!(rendered.contains("title"));
+    }
+
+    #[test]
+    fn thread_pane_lists_notes_and_status_updates_in_top_bar() {
+        let (mut app, _dir) = seeded_app();
+        app.update(Message::ToggleThread).unwrap();
+        assert_eq!(app.left_pane(), LeftPane::Notes);
+        let rendered = render_text(&app, 100, 12);
+        assert!(rendered.contains("notes"));
+        assert!(rendered.contains("Ownership"));
+        assert!(rendered.contains("enter open"));
+        assert!(rendered.contains("t topics"));
+        assert!(rendered.contains("scratch"));
+
+        app.update(Message::ToggleStatus).unwrap();
+        let rendered = render_text(&app, 100, 12);
+        assert!(rendered.contains("keep"));
+        assert!(!rendered.contains("scratch"));
+        assert_eq!(app.opened().unwrap().status, Status::Keep);
+    }
+
+    #[test]
+    fn search_mode_shows_query_and_hits() {
+        let (mut app, _dir) = seeded_app();
+        app.update(Message::StartSearch).unwrap();
+        for c in "plato".chars() {
+            app.update(Message::InsertChar(c)).unwrap();
+        }
+        let rendered = render_text(&app, 80, 12);
+        assert!(rendered.contains("search"));
+        assert!(rendered.contains("/plato"));
+        assert!(rendered.contains("Forms"));
+        assert!(rendered.contains("philosophy"));
     }
 }

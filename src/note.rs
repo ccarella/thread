@@ -132,6 +132,23 @@ impl Note {
         self.body.split_whitespace().count()
     }
 
+    /// Last `max_lines` of the body as a `>` blockquote, with a date header.
+    pub fn quoted_excerpt(&self, max_lines: usize) -> String {
+        let date = self.created.format("%Y-%m-%d");
+        let lines: Vec<&str> = self.body.lines().collect();
+        let start = lines.len().saturating_sub(max_lines);
+        let mut out = format!("> {date}");
+        out.push('\n');
+        out.push('>');
+        for line in &lines[start..] {
+            out.push('\n');
+            out.push_str("> ");
+            out.push_str(line);
+        }
+        out.push('\n');
+        out
+    }
+
     pub fn matches_query(&self, query: &str) -> bool {
         let q = query.to_lowercase();
         if q.is_empty() {
@@ -305,5 +322,16 @@ body";
         assert_eq!(Status::Scratch.to_string(), "scratch");
         assert_eq!(Status::Keep.as_str(), "keep");
         assert_eq!(sample().word_count(), 3);
+    }
+
+    #[test]
+    fn quoted_excerpt_takes_last_lines_with_date_header() {
+        let mut note = sample();
+        note.body = (1..=5)
+            .map(|n| format!("L{n}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let quote = note.quoted_excerpt(3);
+        assert_eq!(quote, "> 2026-09-07\n>\n> L3\n> L4\n> L5\n");
     }
 }
