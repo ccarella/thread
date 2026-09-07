@@ -1,12 +1,15 @@
-//! Two-pane Normal-mode view: topics on the left, latest note on the right.
+//! Two-pane view: topics on the left, editable current note on the right.
 
-use crate::app::App;
-use ratatui::layout::{Constraint, Layout};
+use crate::app::{App, TitleStep};
+use crate::editor;
+use crate::keys::InputMode;
+use ratatui::layout::{Constraint, Layout, Position};
 use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 
-const NORMAL_HINTS: &str = "j/k select  enter open latest  q quit";
+const NORMAL_HINTS: &str = "j/k select  enter open latest  i/a insert  n new  ^s save  q quit";
+const INSERT_HINTS: &str = "esc normal  ^s save";
 
 pub fn render(frame: &mut Frame, app: &App) {
     let [top, body, bottom] = Layout::vertical([
@@ -36,18 +39,76 @@ pub fn render(frame: &mut Frame, app: &App) {
     }
     frame.render_stateful_widget(list, left, &mut state);
 
+    render_note(frame, app, right);
+    render_bottom(frame, app, bottom);
+}
+
+fn render_note(frame: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     let (title, body_text) = match app.opened() {
         Some(note) => (note.title.as_str(), note.body.as_str()),
         None => ("note", ""),
     };
-    frame.render_widget(
-        Paragraph::new(body_text)
-            .wrap(Wrap { trim: false })
-            .block(Block::bordered().title(title)),
-        right,
-    );
+    let inserting = app.input_mode() == InputMode::Insert && app.opened().is_some();
+    let block = Block::bordered().title(title);
+    let inner = block.inner(area);
 
-    frame.render_widget(Paragraph::new(NORMAL_HINTS), bottom);
+    if inserting {
+        let (col, line) = {
+            let (line, col, _) = editor::line_col(body_text, app.cursor());
+            (col as u16, line as u16)
+        };
+        let max_y = inner.height.saturating_sub(1);
+        let scroll_y = line.saturating_sub(max_y);
+        frame.render_widget(
+            Paragraph::new(body_text).scroll((scroll_y, 0)).block(block),
+            area,
+        );
+        if inner.width > 0 && inner.height > 0 {
+            let x = inner.x + col.min(inner.width.saturating_sub(1));
+            let y = inner.y + line.saturating_sub(scroll_y).min(max_y);
+            frame.set_cursor_position(Position::new(x, y));
+        }
+    } else {
+        frame.render_widget(
+            Paragraph::new(body_text)
+                .wrap(Wrap { trim: false })
+                .block(block),
+            area,
+        );
+    }
+}
+
+fn render_bottom(frame: &mut Frame, app: &App, area: ratatui::layout::Rect) {
+    match app.input_mode() {
+        InputMode::Normal => {
+            frame.render_widget(Paragraph::new(NORMAL_HINTS), area);
+        }
+        InputMode::Insert => {
+            frame.render_widget(Paragraph::new(INSERT_HINTS), area);
+        }
+        InputMode::Title => {
+            let Some(state) = app.title_state() else {
+                return;
+            };
+            let label = match state.step {
+                TitleStep::Topic => "topic",
+                TitleStep::Title => "title",
+            };
+            let input = state.input();
+            let mut line = format!("{label}: {input}");
+            if let Some(error) = &state.error {
+                line.push_str("  ");
+                line.push_str(error);
+            }
+            frame.render_widget(Paragraph::new(line), area);
+            if area.width > 0 && area.height > 0 {
+                let prefix = label.len() + 2; // "topic: " / "title: "
+                let x = area.x
+                    + (prefix + state.cursor).min(area.width.saturating_sub(1) as usize) as u16;
+                frame.set_cursor_position(Position::new(x, area.y));
+            }
+        }
+    }
 }
 
 fn top_bar(app: &App) -> String {
@@ -59,6 +120,11 @@ fn top_bar(app: &App) -> String {
         parts.push(note.created.format("%Y-%m-%d").to_string());
         parts.push(note.status.to_string());
         parts.push(format!("{}w", note.word_count()));
+    }
+    match app.input_mode() {
+        InputMode::Insert => parts.push("insert".into()),
+        InputMode::Title => parts.push("title".into()),
+        InputMode::Normal => {}
     }
     parts.join("  ")
 }
@@ -126,8 +192,11 @@ mod tests {
         assert!(rendered.contains("j/k select"));
         assert!(rendered.contains("enter open latest"));
         assert!(rendered.contains("q quit"));
+        assert!(rendered.contains("i/a insert"));
+        assert!(rendered.contains("n new"));
         assert!(rendered.contains("scratch"));
         assert!(rendered.contains("2026-09-07"));
+        assert!(rendered.contains("3w"));
     }
 
     #[test]
@@ -150,5 +219,30 @@ mod tests {
         assert!(rendered.contains("note"));
         assert!(rendered.contains("j/k select"));
         assert!(!rendered.contains("scratch"));
+    }
+
+    #[test]
+    fn insert_mode_changes_hints_and_word_count_on_edit() {
+        let (mut app, _dir) = seeded_app();
+        assert!(render_text(&app, 80, 12).contains("3w"));
+
+        app.update(Message::EnterInsertAppend).unwrap();
+        app.update(Message::InsertChar(' ')).unwrap();
+        app.update(Message::InsertChar('x')).unwrap();
+        let rendered = render_text(&app, 80, 12);
+        assert!(rendered.contains("esc normal"));
+        assert!(rendered.contains("^s save"));
+        assert!(rendered.contains("insert"));
+        assert!(!rendered.contains("j/k select"));
+        assert!(rendered.contains("4w"));
+    }
+
+    #[test]
+    fn title_mode_shows_topic_prompt() {
+        let (mut app, _dir) = seeded_app();
+        app.update(Message::StartNewNote).unwrap();
+        let rendered = render_text(&app, 80, 12);
+        assert!(rendered.contains("topic: rust"));
+        assert!(rendered.contains("title"));
     }
 }

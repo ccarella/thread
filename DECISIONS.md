@@ -52,3 +52,14 @@ Elm-style split: `App` is the model, `keys::Message` is the message (renamed fro
 - Top bar is `thread` plus the selected topic. When a note is open, it also shows the note’s `created` UTC date, status, and whitespace word count (cheap extras; not required to PASS).
 - Bottom bar is Normal-mode hints only. Insert/Title modes and `n` / `t` / `w` / `p` / `/` / `s` stay unbound.
 - `q` calls `save_if_needed` then quits with no confirm modal. M2 has no editor, so that save is a no-op.
+
+## M3 editor (Insert / Title)
+
+No extra crate. Body editing is a small char-index buffer in `editor.rs` (Unicode scalar cursor, never a byte offset). `tui-textarea` / `tui-textarea-2` would pull Emacs bindings, undo, and wrap that M3 does not need.
+
+- **Modes:** `Normal` (topics), `Insert` (body), `Title` (new-note prompts). `Esc` always returns to Normal. Title `Esc` cancels and does not create a note.
+- **`i` / `a`:** only from Normal, and only when a note is already open. Opening a note puts the cursor at the start of the body; `i` inserts there; `a` jumps to the end of the body then inserts. In Insert, `q` is the letter q (quit is Normal-only). `s` without Ctrl is still unbound (timer is M4/M5).
+- **Save:** `Ctrl+s` writes if dirty and stays in the current mode. `q` in Normal saves then quits. Leaving Insert (`Esc`) saves if dirty. A dirty buffer also autosaves every 30s from the first unsaved edit (not a keystroke debounce). `updated` is bumped in `App` on save, not in `Store::save` (so M1 fixtures keep their timestamps).
+- **New note `n`:** Title mode, two steps on the bottom bar: `topic:` (prefilled with the selected topic) then `title:`. Empty or invalid topic stays on the prompt. Created notes are `scratch` with body `What am I trying to decide?\n\n` and land in Insert with the cursor after that starter. Path allocation is still `Store::save`.
+- **Right pane:** the current note is the edit buffer. Insert draws an unwrapped body plus a terminal cursor; Normal still wraps for reading.
+- Still unbound: `t` / `w` / `p` / `/` / `s` (M4/M5).

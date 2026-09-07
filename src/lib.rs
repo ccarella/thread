@@ -2,6 +2,7 @@
 
 pub mod app;
 pub mod config;
+pub mod editor;
 pub mod error;
 pub mod keys;
 pub mod note;
