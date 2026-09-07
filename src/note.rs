@@ -3,7 +3,8 @@
 use crate::error::{Error, Result};
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -70,7 +71,9 @@ impl Note {
     }
 
     pub fn from_markdown(path: Option<PathBuf>, input: &str) -> Result<Self> {
-        let (yaml, body) = split_front_matter(input)?;
+        let Ok((yaml, body)) = split_front_matter(input) else {
+            return Ok(Self::from_plain(path, input));
+        };
         let fm: FrontMatter = serde_yaml::from_str(yaml)?;
         Ok(Self {
             path,
@@ -82,6 +85,34 @@ impl Note {
             parent: fm.parent.filter(|p| !p.is_empty()),
             body: body.to_string(),
         })
+    }
+
+    /// No YAML fence: whole file is body; topic = parent dir; title = filename.
+    fn from_plain(path: Option<PathBuf>, body: &str) -> Self {
+        let topic = path
+            .as_ref()
+            .and_then(|p| p.parent())
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
+        let title = path
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .map(filename_title)
+            .unwrap_or_default();
+        let (created, updated) = timestamps_for(path.as_deref());
+        Self {
+            path,
+            topic,
+            title,
+            status: Status::Scratch,
+            created,
+            updated,
+            parent: None,
+            body: body.to_string(),
+        }
     }
 
     pub fn to_markdown(&self) -> Result<String> {
@@ -129,6 +160,24 @@ pub fn slugify(title: &str) -> String {
     }
 }
 
+fn filename_title(name: &str) -> String {
+    name.strip_suffix(".md")
+        .or_else(|| name.strip_suffix(".MD"))
+        .unwrap_or(name)
+        .to_string()
+}
+
+fn timestamps_for(path: Option<&Path>) -> (DateTime<Utc>, DateTime<Utc>) {
+    if let Some(path) = path {
+        if let Ok(modified) = fs::metadata(path).and_then(|m| m.modified()) {
+            let dt = DateTime::<Utc>::from(modified);
+            return (dt, dt);
+        }
+    }
+    let now = Utc::now();
+    (now, now)
+}
+
 fn parse_datetime(raw: &str) -> Result<DateTime<Utc>> {
     if let Ok(dt) = DateTime::parse_from_rfc3339(raw) {
         return Ok(dt.with_timezone(&Utc));
@@ -166,6 +215,7 @@ fn split_front_matter(input: &str) -> Result<(&str, &str)> {
 mod tests {
     use super::*;
     use chrono::TimeZone;
+    use std::path::PathBuf;
 
     fn sample() -> Note {
         Note {
@@ -238,9 +288,15 @@ body";
     }
 
     #[test]
-    fn missing_front_matter_is_an_error() {
-        let err = Note::from_markdown(None, "# just markdown\n").unwrap_err();
-        assert!(matches!(err, Error::MissingFrontMatter));
+    fn missing_front_matter_uses_path_and_whole_file_as_body() {
+        let path = PathBuf::from("/notes/rust/2026-09-07-plain.md");
+        let note = Note::from_markdown(Some(path.clone()), "# just markdown\n").unwrap();
+        assert_eq!(note.topic, "rust");
+        assert_eq!(note.title, "2026-09-07-plain");
+        assert_eq!(note.status, Status::Scratch);
+        assert_eq!(note.parent, None);
+        assert_eq!(note.body, "# just markdown\n");
+        assert_eq!(note.path.as_deref(), Some(path.as_path()));
     }
 
     #[test]

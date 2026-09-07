@@ -16,12 +16,12 @@ A later swap to `serde_yml` / `serde_norway` should be mechanical.
 
 ## Config file is not loaded yet
 
-`Config::load()` returns defaults only:
+`Config::load()` returns defaults only. No `config.toml` is created or parsed.
 
-- notes dir: `~/Documents/thread` (`$HOME/Documents/thread`)
-- config dir: `$THREAD_HOME` if set, otherwise `~/.config/thread`
+- If `$THREAD_HOME` is set, it is both `notes_dir` and the future config directory.
+- Otherwise notes dir is `~/Documents/thread` and config dir is `~/.config/thread`.
 
-No `config.toml` is created or parsed. Store tests pass an explicit temp directory and never touch the real notes dir.
+Store tests pass an explicit temp directory and never touch the real notes dir.
 
 ## Library + thin binary
 
@@ -34,7 +34,8 @@ Modules match the sketch (`app`, `ui`, `keys`, `note`, `store`, `config`, `error
 - `save` on a note with no `path` allocates `{topic}/{yyyy-mm-dd}-{slug}.md` and appends `-2`, `-3`, … on collision. Once `path` is set, later saves keep that file (title edits do not rename).
 - `parent` is an opaque optional string (relative path recommended); no graph walk in M1.
 - Topic names cannot be empty, `.` / `..`, hidden (`.*`), or contain path separators.
-- `list_notes` / `search` skip malformed `.md` files; `load` returns an error.
+- Files with no YAML fence are still notes: whole file is `body`, `topic` is the parent directory name, `title` is the filename with `.md` stripped, `status` defaults to `scratch`, timestamps come from mtime when the file exists.
+- `list_notes` / `search` skip `.md` files that have a fence but fail YAML parse; `load` returns that error.
 - Writes go through a sibling `*.md.tmp` then `rename`.
 
 ## TUI extras

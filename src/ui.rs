@@ -2,13 +2,11 @@
 
 use crate::app::App;
 use ratatui::layout::Alignment;
-use ratatui::text::Line;
 use ratatui::widgets::{Block, Paragraph};
 use ratatui::Frame;
 
-pub fn render(frame: &mut Frame, app: &App) {
-    let notes_dir = app.store.notes_dir().display().to_string();
-    let widget = Paragraph::new(vec![Line::from("thread"), Line::from(notes_dir)])
+pub fn render(frame: &mut Frame, _app: &App) {
+    let widget = Paragraph::new("thread")
         .alignment(Alignment::Center)
         .block(Block::bordered().title("thread").title_bottom("q to quit"));
     frame.render_widget(widget, frame.area());

@@ -300,4 +300,22 @@ mod tests {
         let loaded = store.load(Path::new("rust/2026-09-07-rel.md")).unwrap();
         assert_eq!(loaded.title, "Rel");
     }
+
+    #[test]
+    fn list_and_load_plain_markdown_without_front_matter() {
+        let (store, _dir) = store();
+        let dir = store.notes_dir().join("rust");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("loose-ideas.md");
+        fs::write(&path, "# no fence\njust a body\n").unwrap();
+
+        let loaded = store.load(&path).unwrap();
+        assert_eq!(loaded.topic, "rust");
+        assert_eq!(loaded.title, "loose-ideas");
+        assert_eq!(loaded.body, "# no fence\njust a body\n");
+
+        let listed = store.list_notes("rust").unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].title, "loose-ideas");
+    }
 }

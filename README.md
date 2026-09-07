@@ -20,9 +20,7 @@ cargo run
 
 The app enters the alternate screen, shows **thread**, and restores the terminal on `q` (also on panic / drop).
 
-First run creates the notes directory if it is missing (`~/Documents/thread`).
-
-Config file (not read yet): `~/.config/thread/config.toml`. `$THREAD_HOME` overrides the config directory.
+First run creates the notes directory if it is missing (`~/Documents/thread`). `$THREAD_HOME` overrides that path (and the future config directory). `config.toml` is not read yet.
 
 ## Note path layout
 
@@ -44,6 +42,8 @@ parent:           # optional
 
 Note body
 ```
+
+A file with no `---` fence is still a note: the whole file is the body, topic is the parent directory, and title is the filename.
 
 ## Tests
 
