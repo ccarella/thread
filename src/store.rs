@@ -167,7 +167,7 @@ impl Store {
     }
 }
 
-fn validate_topic(topic: &str) -> Result<()> {
+pub(crate) fn validate_topic(topic: &str) -> Result<()> {
     if topic.is_empty()
         || topic == "."
         || topic == ".."
