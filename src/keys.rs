@@ -16,6 +16,7 @@ pub enum Message {
     ToggleStatus,
     PullQuote,
     StartSearch,
+    ToggleSession,
     Save,
     Escape,
     Submit,
@@ -62,6 +63,7 @@ pub fn message_from_key(key: KeyEvent, mode: InputMode) -> Option<Message> {
             KeyCode::Char('w') => Some(Message::ToggleStatus),
             KeyCode::Char('p') => Some(Message::PullQuote),
             KeyCode::Char('/') => Some(Message::StartSearch),
+            KeyCode::Char('s') => Some(Message::ToggleSession),
             KeyCode::Esc => Some(Message::Escape),
             _ => None,
         },
@@ -251,7 +253,7 @@ mod tests {
         }
         assert_eq!(
             message_from_key(press(KeyCode::Char('s')), InputMode::Normal),
-            None
+            Some(Message::ToggleSession)
         );
     }
 
@@ -263,10 +265,18 @@ mod tests {
     }
 
     #[test]
-    fn timer_key_stays_unbound() {
+    fn s_toggles_session_in_normal_only() {
         assert_eq!(
             message_from_key(press(KeyCode::Char('s')), InputMode::Normal),
-            None
+            Some(Message::ToggleSession)
+        );
+        assert_eq!(
+            message_from_key(press(KeyCode::Char('s')), InputMode::Insert),
+            Some(Message::InsertChar('s'))
+        );
+        assert_eq!(
+            message_from_key(press(KeyCode::Char('s')), InputMode::Search),
+            Some(Message::InsertChar('s'))
         );
         for code in [KeyCode::Char('J'), KeyCode::Char('K')] {
             assert_eq!(
